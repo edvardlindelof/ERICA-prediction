@@ -15,6 +15,6 @@ class Logger(recoveredEventHandler: ActorRef = null) extends PersistentActor {
     case ev: EricaEvent =>
       if(recoveredEventHandler != null) recoveredEventHandler ! ev
       else println("EricaEventLogger recovered " + ev)
-    case RecoveryCompleted => context.system.terminate()
+    case RecoveryCompleted => println("EricaEventLogger recovery completed")
   }
 }

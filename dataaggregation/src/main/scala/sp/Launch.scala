@@ -11,6 +11,9 @@ object Launch extends App {
   //system.actorOf(Props(new Logger()), "EricaEventLogger")
   val printer = system.actorOf(Props[EricaEventPrinterCustommm], "EricaEventPrinter")
   system.actorOf(Props(new Logger(printer)), "EricaEventLogger")
+
+  scala.io.StdIn.readLine("Press ENTER to exit application.\n")
+  system.terminate()
 }
 
 class EricaEventPrinterCustommm extends Actor {
