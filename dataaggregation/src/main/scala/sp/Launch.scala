@@ -1,8 +1,8 @@
 package sp
 
 import akka.actor._
-import sp.EricaEventLogger.Logger
 
+import sp.EricaEventLogger.Logger
 import sp.gPubSub.API_Data.EricaEvent
 
 object Launch extends App {

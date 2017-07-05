@@ -4,6 +4,7 @@ import akka.persistence._
 import akka.actor.ActorRef
 import sp.gPubSub.API_Data.EricaEvent
 
+// TODO change type from ActorRef to trait TheTrait { def handleEvent: EricaEvent => Unit }, maybe
 class Logger(recoveredEventHandler: ActorRef = null) extends PersistentActor {
   override def persistenceId = "EricaEventLogger"
 
