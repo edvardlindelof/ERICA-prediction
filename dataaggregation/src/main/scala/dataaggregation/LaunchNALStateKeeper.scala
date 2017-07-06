@@ -29,13 +29,13 @@ class NALStateKeeper extends Actor {
   def handleEricaEvent(ev: EricaEvent) = {
     println("patients at NAL: " + patientsAtNAL.size)
     ev.Category match {
-      case "RemovedPatient" => patientsAtNAL.remove(ev.VisitId)
-      case "Q" => patientsAtNAL.add(ev.VisitId)
-      case s: String if s.contains("removed") => patientsAtNAL.remove(ev.VisitId)
+      case "RemovedPatient" => patientsAtNAL.remove(ev.CareContactId)
+      case "Q" => patientsAtNAL.add(ev.CareContactId)
+      case s: String if s.contains("removed") => patientsAtNAL.remove(ev.CareContactId)
       case _ => ()
     }
     ev.Type match {
-      case "KLAR" => patientsAtNAL.remove(ev.VisitId)
+      case "KLAR" => patientsAtNAL.remove(ev.CareContactId)
       case _ => ()
     }
   }
