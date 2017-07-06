@@ -2,22 +2,18 @@ package sp
 
 import akka.actor._
 
-import sp.EricaEventLogger.Logger
+import sp.EricaEventLogger._
 import sp.gPubSub.API_Data.EricaEvent
 
 object Launch extends App {
   val system = ActorSystem("DataAggregation")
 
   //system.actorOf(Props(new Logger()), "EricaEventLogger")
-  val printer = system.actorOf(Props[EricaEventPrinterCustommm], "EricaEventPrinter")
-  system.actorOf(Props(new Logger(printer)), "EricaEventLogger")
 
-  scala.io.StdIn.readLine("Press ENTER to exit application.\n")
-  system.terminate()
+  val printer = new EricaEventPrinterCustommm
+  system.actorOf(Props(new Logger(printer)), "EricaEventLogger")
 }
 
-class EricaEventPrinterCustommm extends Actor {
-  override def receive = {
-    case ev: EricaEvent => println("EricaEventPrinterCustommm received " + ev)
-  }
+class EricaEventPrinterCustommm extends RecoveredEventHandler  {
+  override def handleEvent(ev: EricaEvent) = println("EricaEventPrinterCustommm received " + ev)
 }

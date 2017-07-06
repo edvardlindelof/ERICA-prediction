@@ -4,29 +4,21 @@ import akka.actor._
 
 import scala.collection.mutable
 
-import sp.EricaEventLogger.Logger
+import sp.EricaEventLogger._
 import sp.gPubSub.API_Data.EricaEvent
 
 object LaunchNALStateKeeper extends App {
   val system = ActorSystem("DataAggregation")
 
-  val evHandler = system.actorOf(Props[NALStateKeeper], "NALStateKeeper")
+  val evHandler = new NALStateKeeper
   system.actorOf(Props(new Logger(evHandler)), "EricaEventLogger")
-
-  scala.io.StdIn.readLine("Press ENTER to exit application.\n")
-  system.terminate()
 }
 
-class NALStateKeeper extends Actor {
+class NALStateKeeper extends RecoveredEventHandler {
 
-  // TODO this variable does not make sense yet
-  val patientsAtNAL = mutable.Set[Int]() // set of VisitIds TODO maybe should be CareContactIds?
+  val patientsAtNAL = mutable.Set[Int]() // set of CareContactIds
 
-  override def receive = {
-    case ev: EricaEvent => handleEricaEvent(ev)
-  }
-
-  def handleEricaEvent(ev: EricaEvent) = {
+  override def handleEvent(ev: EricaEvent) = {
     println("patients at NAL: " + patientsAtNAL.size)
     ev.Category match {
       case "RemovedPatient" => patientsAtNAL.remove(ev.CareContactId)

@@ -1,11 +1,9 @@
 package sp.EricaEventLogger
 
 import akka.persistence._
-import akka.actor.ActorRef
 import sp.gPubSub.API_Data.EricaEvent
 
-// TODO change type from ActorRef to trait TheTrait { def handleEvent: EricaEvent => Unit }, maybe
-class Logger(recoveredEventHandler: ActorRef = null) extends PersistentActor {
+class Logger(recoveredEventHandler: RecoveredEventHandler = PrintingHandler) extends PersistentActor {
   override def persistenceId = "EricaEventLogger"
 
   override def receiveCommand = {
@@ -13,9 +11,15 @@ class Logger(recoveredEventHandler: ActorRef = null) extends PersistentActor {
   }
 
   override def receiveRecover = {
-    case ev: EricaEvent =>
-      if(recoveredEventHandler != null) recoveredEventHandler ! ev
-      else println("EricaEventLogger recovered " + ev)
-    case RecoveryCompleted => println("EricaEventLogger recovery completed")
+    case ev: EricaEvent => recoveredEventHandler.handleEvent(ev)
+    case RecoveryCompleted => context.system.terminate()
   }
+}
+
+trait RecoveredEventHandler {
+  def handleEvent(ev: EricaEvent): Unit
+}
+
+object PrintingHandler extends RecoveredEventHandler {
+  override def handleEvent(ev: EricaEvent) = println("EricaEventLogger recovered " + ev)
 }
