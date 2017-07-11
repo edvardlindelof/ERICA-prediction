@@ -2,12 +2,14 @@ package dataaggregation
 
 import akka.actor._
 import org.joda.time.DateTime
+import com.github.tototoshi.csv.CSVWriter
 
 import sp.EricaEventLogger._
 import sp.gPubSub.API_Data.EricaEvent
 
 import scala.collection.mutable
 import scala.util.Try
+import java.io.File
 
 object LaunchNALStateKeeper extends App {
   val system = ActorSystem("DataAggregation")
@@ -42,9 +44,17 @@ class NALStateKeeper extends RecoveredEventHandler {
 
     if(nextSampleTime == null) nextSampleTime = ev.Start.plusMinutes(samplingIntervalMins)
     else if(ev.Start.isAfter(nextSampleTime)) {
-      // print or save state at nextSampleTime
-      val rolling30s = rollingValueLBs.mapValues(_.flatMap(t => if(t._1.isAfter(nextSampleTime.minusMinutes(30))) t._2 :: Nil else Nil)).map(kv => (kv._1 + "30" -> Try(kv._2.sum / kv._2.length).getOrElse(0))) // TODO
-      println(nextSampleTime + " --- nPatients: " + timeOfFirstEvent.size + "; rolling30s: " + rolling30s)
+      // making sure to let lists decide the order of things
+      val timeList = Map("epochseconds" -> (nextSampleTime.getMillis / 1000).toInt).toList
+      val rolling30s = rollingValueKinds.map{ kind =>
+        val valuesFromLast30Mins = rollingValueLBs(kind).filter(_._1.isAfter(nextSampleTime.minusMinutes(30))).map(_._2)
+        val avg = Try(valuesFromLast30Mins.sum / valuesFromLast30Mins.length).getOrElse(0)
+        kind + "30" -> avg
+      }
+      val patientsSetsList = patientKinds.map(kind => kind -> patientSets(kind).size)
+
+      //println(nextSampleTime + " --- nPatients: " + timeOfFirstEvent.size + "; rolling30s: " + rolling30s)
+      WriteToCSV(timeList ::: rolling30s ::: patientsSetsList)
       nextSampleTime = nextSampleTime.plusMinutes(samplingIntervalMins)
     }
 
@@ -100,6 +110,26 @@ class NALStateKeeper extends RecoveredEventHandler {
         patientSets("done").add(ev.CareContactId)
       }
       case _ => ()
+    }
+  }
+
+}
+
+object WriteToCSV {
+  var calledYet = false
+  var filename = ""
+  def apply(data: List[(String, Int)]) = {
+    if(!calledYet) {
+      calledYet = true
+      filename = "output/NALState" + DateTime.now() + ".csv"
+      val csvWriter = CSVWriter.open(new File(filename))
+      csvWriter.writeRow(data.map(_._1)) // fieldNames
+      csvWriter.writeRow(data.map(_._2)) // values
+      csvWriter.close()
+    } else {
+      val csvWriter = CSVWriter.open(new File(filename), append = true)
+      csvWriter.writeRow(data.map(_._2))
+      csvWriter.close()
     }
   }
 }
