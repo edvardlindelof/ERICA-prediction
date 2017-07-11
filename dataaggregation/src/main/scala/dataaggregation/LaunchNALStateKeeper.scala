@@ -3,10 +3,11 @@ package dataaggregation
 import akka.actor._
 import org.joda.time.DateTime
 
-import scala.collection.mutable
-
 import sp.EricaEventLogger._
 import sp.gPubSub.API_Data.EricaEvent
+
+import scala.collection.mutable
+import scala.util.Try
 
 object LaunchNALStateKeeper extends App {
   val system = ActorSystem("DataAggregation")
@@ -19,6 +20,9 @@ class NALStateKeeper extends RecoveredEventHandler {
 
   implicit def stringToDateTime(s: String) = DateTime.parse(s)
 
+  val samplingIntervalMins = 23
+  var nextSampleTime: DateTime = null
+
   val timeOfFirstEvent = mutable.Map[Int, DateTime]() // CareContactId -> DateTime
 
   val priorities = List("PRIO1", "PRIO2", "PRIO3", "PRIO4", "PRIO5")
@@ -27,16 +31,22 @@ class NALStateKeeper extends RecoveredEventHandler {
   val patientKinds = List("all", "MEP", "triaged", "metdoctor", "done") ::: priorities ::: teams ::: invalidTeams
   val patientSets = patientKinds.map(str => str -> mutable.Set[Int]()).toMap // sets are of CareContactIds
 
-  val minsToSaveRollingValues = 120
+  val minsToSaveRollingValues = 200 // needs to be longer than longest rolling time bco timediff between latest event and nextSampleTime
   val rollingValueKinds = "ttt" :: "ttl" :: "ttk" :: Nil
   // Map["ttX", ListBuffer[(time of X-event, seconds to X-event)]]
   val rollingValueLBs = mutable.Map(rollingValueKinds.map(str => str -> mutable.ListBuffer[(DateTime, Int)]()):_*)
 
   val recentlyRemoved = mutable.ListBuffer.fill(500)(-1) // work-around bco events occurring after patient removal, ugh
 
-  var timesDoctorFirstEvent = 0
-
   override def handleEvent(ev: EricaEvent): Unit = {
+
+    if(nextSampleTime == null) nextSampleTime = ev.Start.plusMinutes(samplingIntervalMins)
+    else if(ev.Start.isAfter(nextSampleTime)) {
+      // print or save state at nextSampleTime
+      val rolling30s = rollingValueLBs.mapValues(_.flatMap(t => if(t._1.isAfter(nextSampleTime.minusMinutes(30))) t._2 :: Nil else Nil)).map(kv => (kv._1 + "30" -> Try(kv._2.sum / kv._2.length).getOrElse(0))) // TODO
+      println(nextSampleTime + " --- nPatients: " + timeOfFirstEvent.size + "; rolling30s: " + rolling30s)
+      nextSampleTime = nextSampleTime.plusMinutes(samplingIntervalMins)
+    }
 
     if(recentlyRemoved.contains(ev.CareContactId)) return () // if event occurs after patient removed, ignore it
     else if(!patientSets("all").contains(ev.CareContactId)) {
@@ -50,7 +60,7 @@ class NALStateKeeper extends RecoveredEventHandler {
     }
     //println(rollingValueLBs("ttt").map(_._2))
     //println(rollingValueLBs("ttl").map(_._2))
-    println(rollingValueLBs("ttk").map(_._2))
+    //println(rollingValueLBs("ttk").map(_._2))
 
     ev.Category match {
       case "RemovedPatient" => {
