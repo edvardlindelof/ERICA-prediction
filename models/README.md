@@ -6,6 +6,15 @@ source erica_prediction_env/bin/activate
 pip install -r requirements.txt
 ```
 
+## Visualize a training session in TensorBoard ##
+Train the linear model:
+```
+source erica_prediction_env/bin/activate
+cd linear/
+python train_and_export_model.py
+```
+Then start TensorBoard with `python -m tensorflow.tensorboard --logidir=modeldir --port=8080`
+
 ## Train and export a model ##
 TODO
 
