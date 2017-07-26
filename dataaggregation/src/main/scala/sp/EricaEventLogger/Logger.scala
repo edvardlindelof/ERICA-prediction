@@ -30,16 +30,29 @@ class Logger(stateKeeper: StateKeeper = PrintingStateKeeperDummy,
   var nextSampleTime: DateTime = null
 
   def handlePlayback(pb: ListBuffer[EricaEvent]): Unit = {
-    pb.foreach{ ev =>
+    var remainingEvents = pb.toList
+
+    var done = false
+    while(!done) {
+      val ev = remainingEvents.head
       stateKeeper.handleEvent(ev)
 
-      if(nextSampleTime == null) nextSampleTime = ev.Start.plusMinutes(samplingIntervalMins)
-      else if(ev.Start.isAfter(nextSampleTime)) {
+      if (nextSampleTime == null) nextSampleTime = ev.Start.plusMinutes(samplingIntervalMins)
+      else if (ev.Start.isAfter(nextSampleTime)) {
         val timeTuple = ("epochseconds" -> (nextSampleTime.getMillis / 1000).toInt)
-        println(timeTuple :: stateKeeper.state(nextSampleTime) :: futureTeller.futureState(List())) // TODO pass a list of future events
-        nextSampleTime = nextSampleTime.plusMinutes(samplingIntervalMins)
+        val futureValues = futureTeller.futureState(remainingEvents)
+        println(futureValues)
+        if(!futureValues.isEmpty) {
+          println(timeTuple :: stateKeeper.state(nextSampleTime) :: futureValues)
+          nextSampleTime = nextSampleTime.plusMinutes(samplingIntervalMins)
+        } else {
+          done = true
+        }
       }
 
+      remainingEvents = remainingEvents.tail
+
+      if(remainingEvents.isEmpty) done = true
     }
   }
 }

@@ -72,7 +72,7 @@ class NALStateKeeper extends StateKeeper {
       }
       case "Q" => patientSets("all").add(ev.CareContactId)
       //case "T" => patientSets("all").add(ev.CareContactId)
-      //case "P" => patientSets(ev.Type).add(ev.CareContactId)
+      case "P" => patientSets(ev.Type).add(ev.CareContactId) // Type is here "PRIO4" etc
       case "ReasonForVisitUpdate" if ev.Value == "MEP" => patientSets("MEP").add(ev.CareContactId)
       case "TeamUpdate" => patientSets(ev.Value).add(ev.CareContactId)
       //case s: String if s.contains("removed") => patientsAtNAL.remove(ev.CareContactId)
@@ -106,10 +106,40 @@ class NALStateKeeper extends StateKeeper {
 }
 
 // the output variable of QLasso article
+// TODO haven't yet checked that the output of this one is reasonable
 object TTLOfNextLowPrioPatient extends FutureTeller {
   override def futureState(events: List[EricaEvent]): List[(String, Int)] = {
-    // TODO while !foundPat { if nextPatient is lowprio and has ttl > 0 return ttl else discard nextPatient }
-    println("TTLFOFNEXTLOWPRIOPAT called")
-    List()
+
+    implicit def stringToDateTime(s: String) = DateTime.parse(s)
+
+    val checkedPatients = mutable.Set[Int]()
+
+    var toReturn = List[(String, Int)]()
+    var done = false
+    while(!done) {
+      val nextPatEvent = events.find(ev => ev.Category == "Q" && !checkedPatients.contains(ev.CareContactId))
+      if(!nextPatEvent.isDefined) {
+        return toReturn
+      }
+
+      nextPatEvent.foreach { pEv =>
+        val nextPatId = pEv.CareContactId
+        checkedPatients.add(nextPatId)
+        val prioEvent = events.find(ev => ev.CareContactId == nextPatId && ev.Category == "P")
+        val firstDoctorEvent = events.find(ev => ev.CareContactId == nextPatId && ev.Type == "LÄKARE")
+        prioEvent.foreach { prEv =>
+          if (prEv.Type == "PRIO3" || prEv.Type == "PRIO4" || prEv.Type == "PRIO5")
+            firstDoctorEvent.foreach { dEv =>
+              val secondsToDoctor = (dEv.Start.getMillis - pEv.Start.getMillis) / 1000
+              if (secondsToDoctor > 0) {
+                done = true
+                toReturn = List(("TTLOfNextPatient", secondsToDoctor.toInt))
+              }
+            }
+        }
+      }
+    }
+
+    return toReturn
   }
 }
