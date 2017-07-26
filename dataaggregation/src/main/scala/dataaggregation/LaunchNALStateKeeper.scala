@@ -2,28 +2,24 @@ package dataaggregation
 
 import akka.actor._
 import org.joda.time.DateTime
-import com.github.tototoshi.csv.CSVWriter
 
 import sp.EricaEventLogger._
 import sp.gPubSub.API_Data.EricaEvent
 
 import scala.collection.mutable
 import scala.util.Try
-import java.io.File
 
 object LaunchNALStateKeeper extends App {
   val system = ActorSystem("DataAggregation")
 
   val evHandler = new NALStateKeeper
-  system.actorOf(Props(new Logger(evHandler)), "EricaEventLogger")
+  system.actorOf(Props(new Logger(evHandler, TTLOfNextLowPrioPatient)), "EricaEventLogger")
+  //system.actorOf(Props(new Logger()), "EricaEventLogger")
 }
 
-class NALStateKeeper extends RecoveredEventHandler {
+class NALStateKeeper extends StateKeeper {
 
   implicit def stringToDateTime(s: String) = DateTime.parse(s)
-
-  val samplingIntervalMins = 23
-  var nextSampleTime: DateTime = null
 
   val timeOfFirstEvent = mutable.Map[Int, DateTime]() // CareContactId -> DateTime
 
@@ -40,23 +36,18 @@ class NALStateKeeper extends RecoveredEventHandler {
 
   val recentlyRemoved = mutable.ListBuffer.fill(500)(-1) // work-around bco events occurring after patient removal, ugh
 
-  override def handleEvent(ev: EricaEvent): Unit = {
-
-    if(nextSampleTime == null) nextSampleTime = ev.Start.plusMinutes(samplingIntervalMins)
-    else if(ev.Start.isAfter(nextSampleTime)) {
-      // making sure to let lists decide the order of things
-      val timeList = Map("epochseconds" -> (nextSampleTime.getMillis / 1000).toInt).toList
+  override def state(sampleTime: DateTime): List[(String, Int)] = {
       val rolling30s = rollingValueKinds.map{ kind =>
-        val valuesFromLast30Mins = rollingValueLBs(kind).filter(_._1.isAfter(nextSampleTime.minusMinutes(30))).map(_._2)
+        val valuesFromLast30Mins = rollingValueLBs(kind).filter(_._1.isAfter(sampleTime.minusMinutes(30))).map(_._2)
         val avg = Try(valuesFromLast30Mins.sum / valuesFromLast30Mins.length).getOrElse(0)
         kind + "30" -> avg
       }
       val patientsSetsList = patientKinds.map(kind => kind -> patientSets(kind).size)
 
-      //println(nextSampleTime + " --- nPatients: " + timeOfFirstEvent.size + "; rolling30s: " + rolling30s)
-      WriteToCSV(timeList ::: rolling30s ::: patientsSetsList)
-      nextSampleTime = nextSampleTime.plusMinutes(samplingIntervalMins)
-    }
+      rolling30s ::: patientsSetsList
+  }
+
+  override def handleEvent(ev: EricaEvent): Unit = {
 
     if(recentlyRemoved.contains(ev.CareContactId)) return () // if event occurs after patient removed, ignore it
     else if(!patientSets("all").contains(ev.CareContactId)) {
@@ -112,24 +103,13 @@ class NALStateKeeper extends RecoveredEventHandler {
       case _ => ()
     }
   }
-
 }
 
-object WriteToCSV {
-  var calledYet = false
-  var filename = ""
-  def apply(data: List[(String, Int)]) = {
-    if(!calledYet) {
-      calledYet = true
-      filename = "output/NALState" + DateTime.now() + ".csv"
-      val csvWriter = CSVWriter.open(new File(filename))
-      csvWriter.writeRow(data.map(_._1)) // fieldNames
-      csvWriter.writeRow(data.map(_._2)) // values
-      csvWriter.close()
-    } else {
-      val csvWriter = CSVWriter.open(new File(filename), append = true)
-      csvWriter.writeRow(data.map(_._2))
-      csvWriter.close()
-    }
+// the output variable of QLasso article
+object TTLOfNextLowPrioPatient extends FutureTeller {
+  override def futureState(events: List[EricaEvent]): List[(String, Int)] = {
+    // TODO while !foundPat { if nextPatient is lowprio and has ttl > 0 return ttl else discard nextPatient }
+    println("TTLFOFNEXTLOWPRIOPAT called")
+    List()
   }
 }
