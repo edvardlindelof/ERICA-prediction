@@ -43,7 +43,9 @@ class Logger(stateKeeper: StateKeeper = PrintingStateKeeperDummy,
         val futureValues = futureTeller.futureState(remainingEvents)
         println(futureValues)
         if(!futureValues.isEmpty) {
-          println(timeTuple :: stateKeeper.state(nextSampleTime) :: futureValues)
+          val toWrite = timeTuple :: stateKeeper.state(nextSampleTime) ::: futureValues
+          println(toWrite)
+          //WriteToCSV(toWrite)
           nextSampleTime = nextSampleTime.plusMinutes(samplingIntervalMins)
         } else {
           done = true

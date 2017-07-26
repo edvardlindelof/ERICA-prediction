@@ -8,12 +8,11 @@ import pandas as pd
 
 FEATURES = ["ttt30", "all", "MEP", "triaged", "PRIO3", "PRIO4"]
 
-pdframe = pd.read_csv("NALState2017-07-11T15:14:43.994+02:00.csv")
+pdframe = pd.read_csv("../NALState2017-07-26T18:45:33.190+02:00.csv")
 
 def input_fn_train():
-    feature_cols = {name: tf.constant(pdframe[name].get_values()[:-1]) for name in FEATURES}
-    # TODO atm predicting next ttt30 when sample intervals are 23 min..
-    outputs = tf.constant(pdframe["ttt30"].get_values()[1:])
+    feature_cols = {name: tf.constant(pdframe[name].get_values()) for name in FEATURES}
+    outputs = tf.constant(pdframe["TTLOfNextPatient"].get_values())
     return feature_cols, outputs
 
 feature_cols = [layers.real_valued_column(name) for name in FEATURES]
