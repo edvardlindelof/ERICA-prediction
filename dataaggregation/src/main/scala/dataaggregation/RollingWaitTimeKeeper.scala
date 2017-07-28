@@ -7,7 +7,7 @@ import sp.gPubSub.API_Data.EricaEvent
 import scala.collection.mutable
 import scala.util.Try
 
-object RollingWaitTimeKeeper extends StateKeeper {
+class RollingWaitTimeKeeper(rollingMins: Int = 30) extends StateKeeper {
 
   implicit def stringToDateTime(s: String) = DateTime.parse(s)
 
@@ -70,12 +70,12 @@ object RollingWaitTimeKeeper extends StateKeeper {
   }
 
   override def state(sampleTime: DateTime): List[(String, Int)] = {
-    val rolling30s = rollingValueKinds.map { kind =>
-      val valuesFromLast30Mins = rollingValueLBs(kind).filter(_._1.isAfter(sampleTime.minusMinutes(30))).map(_._2)
-      val avg = Try(valuesFromLast30Mins.sum / valuesFromLast30Mins.length).getOrElse(0)
-      kind + "30" -> avg
+    val rollingValues = rollingValueKinds.map { kind =>
+      val valuesFromLastPeriod = rollingValueLBs(kind).filter(_._1.isAfter(sampleTime.minusMinutes(rollingMins))).map(_._2)
+      val avg = Try(valuesFromLastPeriod.sum / valuesFromLastPeriod.length).getOrElse(0)
+      kind + rollingMins -> avg
     }
-    rolling30s
+    rollingValues
   }
 
 }

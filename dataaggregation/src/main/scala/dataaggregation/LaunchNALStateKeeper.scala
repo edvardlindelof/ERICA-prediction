@@ -16,12 +16,15 @@ object LaunchNALStateKeeper extends App {
 }
 
 class NALStateKeeper extends StateKeeper {
+
+  val rollingWaitTimeKeeper = new RollingWaitTimeKeeper()
+
   override def state(sampleTime: DateTime): List[(String, Int)] = {
-    RollingWaitTimeKeeper.state(sampleTime) ::: PatientKindKeeper.state(sampleTime)
+    rollingWaitTimeKeeper.state(sampleTime) ::: PatientKindKeeper.state(sampleTime)
   }
 
   override def handleEvent(ev: EricaEvent): Unit = {
-    RollingWaitTimeKeeper.handleEvent(ev)
+    rollingWaitTimeKeeper.handleEvent(ev)
     PatientKindKeeper.handleEvent(ev)
   }
 }
