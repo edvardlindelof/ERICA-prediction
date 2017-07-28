@@ -9,7 +9,8 @@ import sp.gPubSub.API_Data.EricaEvent
 import scala.collection.mutable.ListBuffer
 
 class Logger(stateKeeper: StateKeeper = PrintingStateKeeperDummy,
-             futureTeller: FutureTeller = UselessFutureTellerDummy) extends PersistentActor {
+             futureTeller: FutureTeller = UselessFutureTellerDummy,
+             name: String = "Logger") extends PersistentActor {
 
   override def persistenceId = "EricaEventLogger"
 
@@ -27,6 +28,8 @@ class Logger(stateKeeper: StateKeeper = PrintingStateKeeperDummy,
   implicit def stringToDateTime(s: String) = DateTime.parse(s)
 
   val samplingIntervalMins = 23
+  val flushoutHours = 24 // no data is written before this has passed, bc rolling avgs etc are missing in the beginning
+  var firsEventTime: DateTime = null
   var nextSampleTime: DateTime = null
 
   def handlePlayback(pb: ListBuffer[EricaEvent]): Unit = {
@@ -37,15 +40,18 @@ class Logger(stateKeeper: StateKeeper = PrintingStateKeeperDummy,
       val ev = remainingEvents.head
       stateKeeper.handleEvent(ev)
 
+      if(firsEventTime == null) firsEventTime = ev.Start
+
       if (nextSampleTime == null) nextSampleTime = ev.Start.plusMinutes(samplingIntervalMins)
       else if (ev.Start.isAfter(nextSampleTime)) {
         val timeTuple = ("epochseconds" -> (nextSampleTime.getMillis / 1000).toInt)
         val futureValues = futureTeller.futureState(remainingEvents)
-        println(futureValues)
         if(!futureValues.isEmpty) {
           val toWrite = timeTuple :: stateKeeper.state(nextSampleTime) ::: futureValues
-          println(toWrite)
-          //WriteToCSV(toWrite)
+          if(nextSampleTime.isAfter(firsEventTime.plusHours(flushoutHours))) {
+            println(toWrite)
+            WriteToCSV(name, toWrite)
+          }
           nextSampleTime = nextSampleTime.plusMinutes(samplingIntervalMins)
         } else {
           done = true
@@ -85,10 +91,10 @@ object UselessFutureTellerDummy extends FutureTeller {
 object WriteToCSV {
   var calledYet = false
   var filename = ""
-  def apply(data: List[(String, Int)]) = {
+  def apply(name: String, data: List[(String, Int)]) = {
     if(!calledYet) {
       calledYet = true
-      filename = "output/NALState" + DateTime.now() + ".csv"
+      filename = "output/" + name + DateTime.now() + ".csv"
       val csvWriter = CSVWriter.open(new File(filename))
       csvWriter.writeRow(data.map(_._1)) // fieldNames
       csvWriter.writeRow(data.map(_._2)) // values
