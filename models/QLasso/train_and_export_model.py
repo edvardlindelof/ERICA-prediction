@@ -21,6 +21,13 @@ def model(features, targets, mode):
     optimizer = tf.train.GradientDescentOptimizer(0.1)
     train = tf.group(optimizer.minimize(loss), tf.assign_add(global_step, 1))
 
+    tf.summary.scalar("rmse seconds", tf.sqrt(loss))
+    zero = tf.constant(0, dtype=tf.float64)
+    non_zero_weights = tf.not_equal(W, zero)
+    #non_zero_weights = tf.greater(tf.abs(W), zero + 0.5)
+    tf.summary.scalar("non-zero weights", tf.reduce_sum(tf.cast(non_zero_weights, tf.float64)))
+    #tf.summary.tensor_summary("weights", W)
+
     return tf.contrib.learn.ModelFnOps(
         mode=mode, predictions=y,
         loss=loss,
