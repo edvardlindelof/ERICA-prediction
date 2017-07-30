@@ -30,9 +30,11 @@ def model(features, targets, mode):
     #    tf.summary.scalar("W_element" + str(i), W[0, i])
 
     return tf.contrib.learn.ModelFnOps(
-        mode=mode, predictions=y,
+        mode=mode,
+        predictions=y,
         loss=loss,
-        train_op=train)
+        train_op=train
+    )
 
 WAIT_TIME_FEATURES = ["ttt30", "ttl30", "ttk30", "ttt60", "ttl60", "ttk60", "ttt120", "ttl120", "ttk120"]
 # to be picky one should calculate e.g. untriaged = all - triaged, but regression weights can be negative so leaving it for now
@@ -55,8 +57,9 @@ def generate_Q_features(frame, workload_features, capacity_features):
     return Q_features
 
 def input_fn_train():
-    #feature_cols = {name: tf.constant(pdframe[name].get_values() / max(pdframe[name].get_values()), dtype=tf.float64) for name in FEATURES}
     feature_cols = {}
+    untreated_low_prio_col = tf.constant(pdframe["UntreatedLowPrio"].get_values(), dtype=tf.float64)
+    feature_cols["UntreatedLowPrio"] = untreated_low_prio_col / tf.reduce_max(untreated_low_prio_col) # normalization
     Q_features = generate_Q_features(pdframe, WORKLOAD_FEATURES, CAPACITY_FEATURES)
     for key in Q_features:
         col = Q_features[key]
@@ -68,13 +71,6 @@ def input_fn_train():
     #outputs = outputs / tf.reduce_max(outputs)
     return feature_cols, outputs
 
-feature_cols = [layers.real_valued_column(name) for name in FEATURES]
-'''
-regressor = LinearRegressor(
-    feature_columns=feature_cols,
-    model_dir="./modeldir"
-)
-'''
 regressor = learn.Estimator(model_fn=model, model_dir="./modeldir")
 regressor.fit(input_fn=input_fn_train, steps=10000)
 
