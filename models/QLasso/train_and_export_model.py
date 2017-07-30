@@ -16,17 +16,18 @@ def model(features, targets, mode):
     X = [features[key] for key in features]
     y = tf.reshape(tf.matmul(W, X) + b, [-1])
 
-    loss = tf.reduce_mean(tf.square(y - targets)) + tf.reduce_sum(tf.abs(W))
+    loss = tf.reduce_mean(tf.square(y - targets)) + 100.0 * tf.norm(W, ord=1) # penalty hyperparameter
     global_step = tf.train.get_global_step()
-    optimizer = tf.train.GradientDescentOptimizer(0.1)
+    optimizer = tf.train.GradientDescentOptimizer(0.001)
     train = tf.group(optimizer.minimize(loss), tf.assign_add(global_step, 1))
 
-    tf.summary.scalar("rmse seconds", tf.sqrt(loss))
+    tf.summary.scalar("rmse_seconds", tf.sqrt(loss))
     zero = tf.constant(0, dtype=tf.float64)
-    non_zero_weights = tf.not_equal(W, zero)
-    #non_zero_weights = tf.greater(tf.abs(W), zero + 0.5)
-    tf.summary.scalar("non-zero weights", tf.reduce_sum(tf.cast(non_zero_weights, tf.float64)))
-    #tf.summary.tensor_summary("weights", W)
+    #non_zero_weights = tf.not_equal(W, zero)
+    non_zero_weights = tf.greater(tf.abs(W), zero + 0.1)
+    tf.summary.scalar("non-zero_weights", tf.reduce_sum(tf.cast(non_zero_weights, tf.float64)))
+    #for i in range(len(features)):
+    #    tf.summary.scalar("W_element" + str(i), W[0, i])
 
     return tf.contrib.learn.ModelFnOps(
         mode=mode, predictions=y,
@@ -47,6 +48,7 @@ def generate_Q_features(frame, workload_features, capacity_features):
     Q_features = {}
     for workload in workload_features:
         for capacity in capacity_features:
+            # TODO THE DIVISION IS FAULTY, capacity is a list and never == 0...
             if capacity == 0: # pretty arbitrary constant 0.5 to avoid division by 0
                 Q_features[workload + "/" + capacity] = frame[workload].get_values() / 0.5
             else:
