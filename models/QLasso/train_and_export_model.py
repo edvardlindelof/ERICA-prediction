@@ -16,7 +16,7 @@ def model(features, targets, mode):
     X = [features[key] for key in features]
     y = tf.reshape(tf.matmul(W, X) + b, [-1])
 
-    loss = tf.reduce_mean(tf.square(y - targets)) + 100.0 * tf.norm(W, ord=1) # penalty hyperparameter
+    loss = tf.reduce_mean(tf.square(y - targets)) + 100.0 * tf.norm(W, ord=1) # TODO penalty hyperparameter
     global_step = tf.train.get_global_step()
     optimizer = tf.train.GradientDescentOptimizer(0.001)
     train = tf.group(optimizer.minimize(loss), tf.assign_add(global_step, 1))
@@ -34,7 +34,6 @@ def model(features, targets, mode):
         loss=loss,
         train_op=train)
 
-#FEATURES = ["ttt30", "all", "MEP", "triaged", "PRIO3", "PRIO4"]
 WAIT_TIME_FEATURES = ["ttt30", "ttl30", "ttk30", "ttt60", "ttl60", "ttk60", "ttt120", "ttl120", "ttk120"]
 # to be picky one should calculate e.g. untriaged = all - triaged, but regression weights can be negative so leaving it for now
 WORKLOAD_FEATURES = ["UntreatedLowPrio", "all", "MEP", "triaged", "metdoctor", "done", "PRIO1", "PRIO2", "PRIO3", "PRIO4", "PRIO5"]
@@ -48,11 +47,11 @@ def generate_Q_features(frame, workload_features, capacity_features):
     Q_features = {}
     for workload in workload_features:
         for capacity in capacity_features:
-            # TODO THE DIVISION IS FAULTY, capacity is a list and never == 0...
-            if capacity == 0: # pretty arbitrary constant 0.5 to avoid division by 0
-                Q_features[workload + "/" + capacity] = frame[workload].get_values() / 0.5
-            else:
-                Q_features[workload + "/" + capacity] = frame[workload].get_values() / frame[capacity].get_values()
+            load = tf.constant(frame[workload].get_values(), dtype=tf.float64)
+            cap = tf.constant(frame[capacity].get_values(), dtype=tf.float64)
+            where_cap_small = tf.cast(tf.less(cap, 0.99), tf.float64)
+            min_bound_cap = cap + 0.5 * where_cap_small * tf.ones_like(cap) # replace 0s with 0.5s
+            Q_features[workload + "/" + capacity] = load / min_bound_cap
     return Q_features
 
 def input_fn_train():
@@ -60,7 +59,7 @@ def input_fn_train():
     feature_cols = {}
     Q_features = generate_Q_features(pdframe, WORKLOAD_FEATURES, CAPACITY_FEATURES)
     for key in Q_features:
-        col = tf.constant(Q_features[key], dtype=tf.float64)
+        col = Q_features[key]
         feature_cols[key] = col / tf.reduce_max(col) # normalization
     for feature in WAIT_TIME_FEATURES:
         col = tf.constant(pdframe[feature].get_values(), dtype=tf.float64)
