@@ -58,16 +58,33 @@ def generate_Q_features(frame, workload_features, capacity_features):
 
 def input_fn_train():
     feature_cols = {}
+
+    ttl_next_low_prio_patient = tf.constant(pdframe["TTLOfNextPatient"].get_values(), dtype=tf.float64)
+
+    # TODO the 10 lines below triples training time, despite it only really needing to be run once
+    # return mean of outputs of points that are close to time time-of-week-wise
+    def to_time_of_week_feature(time, times, outputs):
+        neighbour_positions = tf.less(tf.abs(times - time), 1800) # elements True if within +/- 30 min
+        neighbour_outputs = outputs * tf.cast(neighbour_positions, tf.float64)
+        return tf.reduce_mean(neighbour_outputs)
+    epoch_seconds = tf.constant(pdframe["epochseconds"].get_values(), dtype=tf.float64)
+    times_of_week = epoch_seconds % (3600 * 24 * 7) # TODO does not take summer/winter-time into account
+    time_of_week_feature = tf.map_fn(lambda time: to_time_of_week_feature(time, times_of_week, ttl_next_low_prio_patient), times_of_week)
+    feature_cols["TimeOfWeekFeature"] = time_of_week_feature / tf.reduce_max(time_of_week_feature)
+
     untreated_low_prio_col = tf.constant(pdframe["UntreatedLowPrio"].get_values(), dtype=tf.float64)
     feature_cols["UntreatedLowPrio"] = untreated_low_prio_col / tf.reduce_max(untreated_low_prio_col) # normalization
+
     Q_features = generate_Q_features(pdframe, WORKLOAD_FEATURES, CAPACITY_FEATURES)
     for key in Q_features:
         col = Q_features[key]
         feature_cols[key] = col / tf.reduce_max(col) # normalization
+
     for feature in WAIT_TIME_FEATURES:
         col = tf.constant(pdframe[feature].get_values(), dtype=tf.float64)
         feature_cols[feature] = col / tf.reduce_max(col) # normalization
-    outputs = tf.constant(pdframe["TTLOfNextPatient"].get_values(), dtype=tf.float64)
+
+    outputs = ttl_next_low_prio_patient
     #outputs = outputs / tf.reduce_max(outputs)
     return feature_cols, outputs
 
