@@ -9,6 +9,8 @@ tf.logging.set_verbosity(tf.logging.INFO)
 
 import pandas as pd
 
+from time_of_week_feature import to_time_of_week_feature
+
 
 def model(features, targets, mode):
     W = tf.get_variable("W", [1, len(features)], dtype=tf.float64)
@@ -16,12 +18,13 @@ def model(features, targets, mode):
     X = [features[key] for key in features]
     y = tf.reshape(tf.matmul(W, X) + b, [-1])
 
-    loss = tf.reduce_mean(tf.square(y - targets)) + 100.0 * tf.norm(W, ord=1) # TODO penalty hyperparameter
+    un_penaltied_loss = tf.reduce_mean(tf.square(y - targets))
+    loss = un_penaltied_loss + 100.0 * tf.norm(W, ord=1) # TODO penalty hyperparameter
     global_step = tf.train.get_global_step()
     optimizer = tf.train.GradientDescentOptimizer(0.001)
     train = tf.group(optimizer.minimize(loss), tf.assign_add(global_step, 1))
 
-    tf.summary.scalar("rmse_seconds", tf.sqrt(loss))
+    tf.summary.scalar("mse_minutes", un_penaltied_loss / 3600)
     zero = tf.constant(0, dtype=tf.float64)
     #non_zero_weights = tf.not_equal(W, zero)
     non_zero_weights = tf.greater(tf.abs(W), zero + 0.1)
@@ -43,7 +46,7 @@ CAPACITY_FEATURES = ["doctors60", "teams60"]
 
 FEATURES = WAIT_TIME_FEATURES + WORKLOAD_FEATURES + CAPACITY_FEATURES
 
-pdframe = pd.read_csv("QLasso2017-07-28T11:36:47.045+02:00.csv")
+pdframe = pd.read_csv("QLasso2017-08-08T14:15:00.357+02:00.csv")
 
 def generate_Q_features(frame, workload_features, capacity_features):
     Q_features = {}
@@ -61,15 +64,9 @@ def input_fn_train():
 
     ttl_next_low_prio_patient = tf.constant(pdframe["TTLOfNextPatient"].get_values(), dtype=tf.float64)
 
-    # TODO the 10 lines below triples training time, despite it only really needing to be run once
-    # return mean of outputs of points that are close to time time-of-week-wise
-    def to_time_of_week_feature(time, times, outputs):
-        neighbour_positions = tf.less(tf.abs(times - time), 1800) # elements True if within +/- 30 min
-        neighbour_outputs = outputs * tf.cast(neighbour_positions, tf.float64)
-        return tf.reduce_mean(neighbour_outputs)
-    epoch_seconds = tf.constant(pdframe["epochseconds"].get_values(), dtype=tf.float64)
-    times_of_week = epoch_seconds % (3600 * 24 * 7) # TODO does not take summer/winter-time into account
-    time_of_week_feature = tf.map_fn(lambda time: to_time_of_week_feature(time, times_of_week, ttl_next_low_prio_patient), times_of_week)
+    epoch_seconds = tf.constant(pdframe["epochseconds"].get_values(), dtype=tf.int32)
+    # TODO slows down step time with a factor of about 5 despite only needing to be called once..
+    time_of_week_feature = to_time_of_week_feature(epoch_seconds, ttl_next_low_prio_patient)
     feature_cols["TimeOfWeekFeature"] = time_of_week_feature / tf.reduce_max(time_of_week_feature)
 
     untreated_low_prio_col = tf.constant(pdframe["UntreatedLowPrio"].get_values(), dtype=tf.float64)
@@ -89,7 +86,7 @@ def input_fn_train():
     return feature_cols, outputs
 
 regressor = learn.Estimator(model_fn=model, model_dir="./modeldir")
-regressor.fit(input_fn=input_fn_train, steps=10000)
+regressor.fit(input_fn=input_fn_train, steps=50000)
 
 '''
 def serving_input_fn():
