@@ -24,11 +24,13 @@ def model(features, targets, mode):
     optimizer = tf.train.GradientDescentOptimizer(0.001)
     train = tf.group(optimizer.minimize(loss), tf.assign_add(global_step, 1))
 
-    tf.summary.scalar("mse_minutes", un_penaltied_loss / 3600)
+    mse_minutes = tf.div(un_penaltied_loss, 3600, name="mse_minutes")
+    tf.summary.scalar("mse_in_minutes", mse_minutes)
     zero = tf.constant(0, dtype=tf.float64)
     #non_zero_weights = tf.not_equal(W, zero)
     non_zero_weights = tf.greater(tf.abs(W), zero + 0.1)
-    tf.summary.scalar("non-zero_weights", tf.reduce_sum(tf.cast(non_zero_weights, tf.float64)))
+    n_non_zero_weights = tf.reduce_sum(tf.cast(non_zero_weights, tf.float64), name="n_non_zero_weights")
+    tf.summary.scalar("non-zero_weights", n_non_zero_weights)
     #for i in range(len(features)):
     #    tf.summary.scalar("W_element" + str(i), W[0, i])
 
@@ -66,7 +68,7 @@ def input_fn_train():
 
     epoch_seconds = tf.constant(pdframe["epochseconds"].get_values(), dtype=tf.int32)
     # TODO slows down step time with a factor of about 5 despite only needing to be called once..
-    time_of_week_feature = to_time_of_week_feature(epoch_seconds, ttl_next_low_prio_patient)
+    time_of_week_feature = to_time_of_week_feature(epoch_seconds)
     feature_cols["TimeOfWeekFeature"] = time_of_week_feature / tf.reduce_max(time_of_week_feature)
 
     untreated_low_prio_col = tf.constant(pdframe["UntreatedLowPrio"].get_values(), dtype=tf.float64)
@@ -86,7 +88,8 @@ def input_fn_train():
     return feature_cols, outputs
 
 regressor = learn.Estimator(model_fn=model, model_dir="./modeldir")
-regressor.fit(input_fn=input_fn_train, steps=50000)
+print_tensor = learn.monitors.PrintTensor(["n_non_zero_weights", "mse_minutes"])
+regressor.fit(input_fn=input_fn_train, steps=50000, monitors=[print_tensor])
 
 '''
 def serving_input_fn():
