@@ -1,3 +1,4 @@
 erica_prediction_env/
+*.pyc
 
 .idea/
