@@ -27,7 +27,7 @@ class Logger(stateKeeper: StateKeeper = PrintingStateKeeperDummy,
 
   implicit def stringToDateTime(s: String) = DateTime.parse(s)
 
-  val samplingIntervalMins = 23
+  val samplingIntervalMins = 10
   val flushoutHours = 24 // no data is written before this has passed, bc rolling avgs etc are missing in the beginning
   var firsEventTime: DateTime = null
   var nextSampleTime: DateTime = null
