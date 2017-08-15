@@ -19,25 +19,22 @@ def model(features, targets, mode):
     W = tf.get_variable("W", [len(targets), len(features)])
     b = tf.get_variable("b", [len(targets), 1])
     X = [features[key] for key in features]
-    print X
-    print tf.matmul(W, X)
-    print b
     y = tf.matmul(W, X) + b
     t = tf.reshape([targets[key] for key in target_keys], [len(targets), -1])
-    print y[:, 1]
 
-    #un_penaltied_loss = tf.reduce_mean(tf.square(y - targets))
-    un_penaltied_loss = tf.losses.mean_squared_error(t, y)
+    un_penaltied_loss = tf.reduce_mean(tf.square(y - t), 1)
+    #un_penaltied_loss = tf.losses.mean_squared_error(t, y)
     # TODO penalty hyperparameter
-    # TODO perhaps make with one penalty for each output
-    loss = un_penaltied_loss + (0.1 / len(targets)) * tf.norm(W, ord=1)
+    # TODO perhaps make vector with one penalty for each output
+    loss = tf.reduce_mean(un_penaltied_loss) + (0.1 / len(targets)) * tf.norm(W, ord=1)
     #loss = un_penaltied_loss
     global_step = tf.train.get_global_step()
     optimizer = tf.train.GradientDescentOptimizer(0.01)
     train = tf.group(optimizer.minimize(loss), tf.assign_add(global_step, 1))
 
-    mse = tf.identity(un_penaltied_loss, name="mse")
-    tf.summary.scalar("mean_square_error", mse)
+    for i in range(len(target_keys)):
+        mse = tf.identity(un_penaltied_loss[i], name=target_keys[i] + "-mse")
+        tf.summary.scalar(target_keys[i] + "-mean_square_error", mse)
 
     for i in range(len(target_keys)):
         zero = tf.constant(0, dtype=tf.float32)
@@ -75,7 +72,8 @@ CAPACITY_FEATURES = ["doctors60", "teams60"]
 FEATURES = FREQUENCY_FEATURES + WORKLOAD_FEATURES + CAPACITY_FEATURES
 
 pdframe = pd.read_csv("FLasso2017-08-14T15:29:28.093+02:00.csv")
-event_titles = ["Kölapp", "Triage"] # Kölapp, Triage, Klar or Läkare
+#event_titles = ["Triage"] # Kölapp, Triage, Klar or Läkare
+event_titles = ["Kölapp", "Triage", "Läkare", "Klar"]
 
 # doing this outside of input_fn_train bc if placed in there it will be called maaaaaaany times
 epoch_seconds = np.array(pdframe["epochseconds"].get_values(), dtype=np.int32)
@@ -129,7 +127,10 @@ def input_fn_train():
     return feature_cols, outputs
 
 regressor = learn.Estimator(model_fn=model, model_dir="./modeldir")
-print_tensor = learn.monitors.PrintTensor(["NextHourTriage-n_non_zero_weights", "mse", "W"])
+w_to_monitor = ["NextHour" + fix(title) + "-n_non_zero_weights" for title in event_titles]
+mse_to_monitor = ["NextHour" + fix(title) + "-mse" for title in event_titles]
+#print_tensor = learn.monitors.PrintTensor(["NextHourTriage-n_non_zero_weights", "NextHourTriage-mse"])
+print_tensor = learn.monitors.PrintTensor(w_to_monitor + mse_to_monitor)
 regressor.fit(input_fn=input_fn_train, steps=50000, monitors=[print_tensor])
 
 '''
