@@ -17,15 +17,20 @@ def model(features, targets, mode):
     target_keys = targets.keys()
 
     W = tf.get_variable("W", [len(targets), len(features)])
-    b = tf.get_variable("b", [len(targets)])
+    b = tf.get_variable("b", [len(targets), 1])
     X = [features[key] for key in features]
+    print X
+    print tf.matmul(W, X)
+    print b
     y = tf.matmul(W, X) + b
     t = tf.reshape([targets[key] for key in target_keys], [len(targets), -1])
     print y[:, 1]
 
     #un_penaltied_loss = tf.reduce_mean(tf.square(y - targets))
     un_penaltied_loss = tf.losses.mean_squared_error(t, y)
-    loss = un_penaltied_loss + 0.1 * tf.norm(W, ord=1) # TODO penalty hyperparameter
+    # TODO penalty hyperparameter
+    # TODO perhaps make with one penalty for each output
+    loss = un_penaltied_loss + (0.1 / len(targets)) * tf.norm(W, ord=1)
     #loss = un_penaltied_loss
     global_step = tf.train.get_global_step()
     optimizer = tf.train.GradientDescentOptimizer(0.01)
@@ -39,7 +44,8 @@ def model(features, targets, mode):
         #non_zero_weights = tf.not_equal(W, zero)
         non_zero_weights = tf.greater(tf.abs(W[i]), zero + 0.3)
         n_non_zero_weights = tf.reduce_sum(tf.cast(non_zero_weights, tf.float32), name=target_keys[i] + "-n_non_zero_weights")
-        tf.summary.scalar(target_keys[i] + "-non-zero_weights", n_non_zero_weights)
+        title = target_keys[i]
+        tf.summary.scalar(fix(title) + "-non-zero_weights", n_non_zero_weights)
 
     return tf.contrib.learn.ModelFnOps(
         mode=mode,
@@ -48,6 +54,14 @@ def model(features, targets, mode):
         loss=loss,
         train_op=train
     )
+
+def fix(title):
+    if title == "Kölapp":
+        return "Kolapp"
+    if title == "Läkare":
+        return "Lakare"
+    else:
+        return title
 
 FREQUENCY_FEATURES = [
     "Kölapp30","Triage30","Läkare30","Klar30",
@@ -61,12 +75,15 @@ CAPACITY_FEATURES = ["doctors60", "teams60"]
 FEATURES = FREQUENCY_FEATURES + WORKLOAD_FEATURES + CAPACITY_FEATURES
 
 pdframe = pd.read_csv("FLasso2017-08-14T15:29:28.093+02:00.csv")
-event_title = "Triage" # Kölapp, Triage, Klar or Läkare
+event_titles = ["Kölapp", "Triage"] # Kölapp, Triage, Klar or Läkare
 
 # doing this outside of input_fn_train bc if placed in there it will be called maaaaaaany times
 epoch_seconds = np.array(pdframe["epochseconds"].get_values(), dtype=np.int32)
-time_of_week_feature = to_time_of_week_feature_np(epoch_seconds, event_title)
-time_of_week_feature = time_of_week_feature / np.max(time_of_week_feature)
+time_of_week_features = {}
+for event_title in event_titles:
+    time_of_week_feature = to_time_of_week_feature_np(epoch_seconds, event_title)
+    time_of_week_feature = time_of_week_feature / np.max(time_of_week_feature)
+    time_of_week_features[fix(event_title)] = time_of_week_feature
 
 def generate_Q_features(frame, workload_features, capacity_features):
     Q_features = {}
@@ -82,10 +99,10 @@ def generate_Q_features(frame, workload_features, capacity_features):
 def input_fn_train():
     feature_cols = {}
 
-    next_hour_triage = tf.constant(pdframe["NextHour" + event_title].get_values(), dtype=tf.float32)
+    # epoch_seconds = tf.constant(pdframe["epochseconds"].get_values(), dtype=tf.int32)
 
-    epoch_seconds = tf.constant(pdframe["epochseconds"].get_values(), dtype=tf.int32)
-    feature_cols["TimeOfWeekFeature"] = tf.constant(time_of_week_feature)
+    for key in time_of_week_features:
+        feature_cols[key + "TimeOfWeekFeature"] = tf.constant(time_of_week_features[key])
 
     untreated_low_prio_col = tf.constant(pdframe["UntreatedLowPrio"].get_values(), dtype=tf.float32)
     feature_cols["UntreatedLowPrio"] = untreated_low_prio_col / tf.reduce_max(untreated_low_prio_col) # normalization
@@ -103,7 +120,11 @@ def input_fn_train():
         col = Q_features[key]
         feature_cols[key] = col / tf.reduce_max(col) # normalization
 
-    outputs = {"NextHourTriage": next_hour_triage}
+    outputs = {}
+    for event_title in event_titles:
+        next_hour_values = tf.constant(pdframe["NextHour" + event_title].get_values(), dtype=tf.float32)
+        outputs["NextHour" + fix(event_title)] = next_hour_values
+
     #outputs = outputs / tf.reduce_max(outputs)
     return feature_cols, outputs
 
