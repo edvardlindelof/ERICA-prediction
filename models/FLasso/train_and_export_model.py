@@ -14,13 +14,17 @@ from time_of_week_feature import to_time_of_week_feature, to_time_of_week_featur
 
 
 def model(features, targets, mode):
-    W = tf.get_variable("W", [1, len(features)])
-    b = tf.get_variable("b", [1])
+    target_keys = targets.keys()
+
+    W = tf.get_variable("W", [len(targets), len(features)])
+    b = tf.get_variable("b", [len(targets)])
     X = [features[key] for key in features]
-    y = tf.reshape(tf.matmul(W, X) + b, [-1])
+    y = tf.matmul(W, X) + b
+    t = tf.reshape([targets[key] for key in target_keys], [len(targets), -1])
+    print y[:, 1]
 
     #un_penaltied_loss = tf.reduce_mean(tf.square(y - targets))
-    un_penaltied_loss = tf.losses.mean_squared_error(targets, y)
+    un_penaltied_loss = tf.losses.mean_squared_error(t, y)
     loss = un_penaltied_loss + 0.1 * tf.norm(W, ord=1) # TODO penalty hyperparameter
     #loss = un_penaltied_loss
     global_step = tf.train.get_global_step()
@@ -29,17 +33,18 @@ def model(features, targets, mode):
 
     mse = tf.identity(un_penaltied_loss, name="mse")
     tf.summary.scalar("mean_square_error", mse)
-    zero = tf.constant(0, dtype=tf.float32)
-    #non_zero_weights = tf.not_equal(W, zero)
-    non_zero_weights = tf.greater(tf.abs(W), zero + 0.3)
-    n_non_zero_weights = tf.reduce_sum(tf.cast(non_zero_weights, tf.float32), name="n_non_zero_weights")
-    tf.summary.scalar("non-zero_weights", n_non_zero_weights)
-    #for i in range(len(features)):
-    #    tf.summary.scalar("W_element" + str(i), W[0, i])
+
+    for i in range(len(target_keys)):
+        zero = tf.constant(0, dtype=tf.float32)
+        #non_zero_weights = tf.not_equal(W, zero)
+        non_zero_weights = tf.greater(tf.abs(W[i]), zero + 0.3)
+        n_non_zero_weights = tf.reduce_sum(tf.cast(non_zero_weights, tf.float32), name=target_keys[i] + "-n_non_zero_weights")
+        tf.summary.scalar(target_keys[i] + "-non-zero_weights", n_non_zero_weights)
 
     return tf.contrib.learn.ModelFnOps(
         mode=mode,
-        predictions=y,
+        #predictions=y,
+        predictions={target_keys[i]: y[i] for i in range(len(target_keys))},
         loss=loss,
         train_op=train
     )
@@ -98,12 +103,12 @@ def input_fn_train():
         col = Q_features[key]
         feature_cols[key] = col / tf.reduce_max(col) # normalization
 
-    outputs = next_hour_triage
+    outputs = {"NextHourTriage": next_hour_triage}
     #outputs = outputs / tf.reduce_max(outputs)
     return feature_cols, outputs
 
 regressor = learn.Estimator(model_fn=model, model_dir="./modeldir")
-print_tensor = learn.monitors.PrintTensor(["n_non_zero_weights", "mse", "W"])
+print_tensor = learn.monitors.PrintTensor(["NextHourTriage-n_non_zero_weights", "mse", "W"])
 regressor.fit(input_fn=input_fn_train, steps=50000, monitors=[print_tensor])
 
 '''
