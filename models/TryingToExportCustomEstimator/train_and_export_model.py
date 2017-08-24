@@ -30,7 +30,18 @@ def model(features, targets, mode):
     X = tf.reshape(X, [2, 3])
     y = tf.reshape(tf.matmul(W, X) + b, [-1])
 
-    loss = tf.losses.mean_squared_error(targets, y)
+    if mode == "train":
+        t = targets
+    else:
+        t = tf.placeholder(tf.int32)
+
+    print "in model()"
+    print mode
+    print mode == "infer"
+    print t
+    print y
+
+    loss = tf.losses.mean_squared_error(t, y)
 
     global_step = tf.train.get_global_step()
     optimizer = tf.train.GradientDescentOptimizer(0.01)
@@ -50,13 +61,19 @@ regressor.fit(input_fn=input_fn_train, steps=150)
 pred = regressor.predict(input_fn=input_fn_test)
 print [p for p in pred]
 
-'''
 def serving_input_fn():
-    default_inputs = {col.name: tf.placeholder(col.dtype, [None]) for col in feature_cols}
+    default_inputs = {col: tf.placeholder(tf.int32) for col in FEATURES}
     features = {key: tf.expand_dims(tensor, -1) for key, tensor in default_inputs.items()}
+    '''
+    features = {
+        "input_a": tf.constant([[1], [2], [3]]),
+        "input_b": tf.constant([[0], [-7], [4]])
+    }
+    default_inputs = features
+    '''
     return input_fn_utils.InputFnOps(
         features=features,
-        labels=None,
+        labels = None,
         default_inputs=default_inputs
     )
 
@@ -64,4 +81,3 @@ regressor.export_savedmodel(
    "exportedmodel",
     serving_input_fn
 )
-'''
