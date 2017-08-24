@@ -14,19 +14,40 @@ from time_of_week_feature import to_time_of_week_feature, to_time_of_week_featur
 
 
 def model(features, targets, mode):
-    target_keys = targets.keys()
+    #W = tf.placeholder(tf.float32)
+    #b = tf.placeholder(tf.float32)
+    W = tf.get_variable("W", [len(EVENT_TITLES), len(features)])
+    b = tf.get_variable("b", [len(EVENT_TITLES), 1])
+    #X = [features[key] for key in features]
+    X = tf.reshape([features[key] for key in features], [len(features), -1])
+    #t = tf.reshape([targets[key] for key in target_keys], [len(targets), -1])
 
-    W = tf.get_variable("W", [len(targets), len(features)])
-    b = tf.get_variable("b", [len(targets), 1])
-    X = [features[key] for key in features]
+    target_keys = []
+    if mode == "train":
+        target_keys = targets.keys()
+        t = tf.reshape([targets[key] for key in target_keys], [len(targets), -1])
+    else:
+        t = tf.placeholder(tf.float32)
+
+    print W
+    print tf.reshape(X, [len(features), -1])
     y = tf.matmul(W, X) + b
-    t = tf.reshape([targets[key] for key in target_keys], [len(targets), -1])
+
+    print "inside model()"
+    print targets
+    print mode
+    print mode == "infer"
+    print t
+    print y
+    print W
+    print FEATURES
+    print [feature for feature in features.keys()]
 
     un_penaltied_loss = tf.reduce_mean(tf.square(y - t), 1)
     #un_penaltied_loss = tf.losses.mean_squared_error(t, y)
     # TODO penalty hyperparameter
     # TODO perhaps make vector with one penalty for each output
-    loss = tf.reduce_mean(un_penaltied_loss) + (0.1 / len(targets)) * tf.norm(W, ord=1)
+    loss = tf.reduce_mean(un_penaltied_loss) + (0.1 / tf.cast(tf.size(t), tf.float32)) * tf.norm(W, ord=1)
     #loss = un_penaltied_loss
     global_step = tf.train.get_global_step()
     optimizer = tf.train.GradientDescentOptimizer(0.01)
@@ -47,9 +68,11 @@ def model(features, targets, mode):
     return tf.contrib.learn.ModelFnOps(
         mode=mode,
         #predictions=y,
-        predictions={target_keys[i]: y[i] for i in range(len(target_keys))},
+        predictions=tf.reduce_sum(y),
+        #predictions={target_keys[i]: y[i] for i in range(len(target_keys))},
         loss=loss,
-        train_op=train
+        train_op=train,
+        #output_alternatives=["NextHourLakare"]
     )
 
 def fix(title):
@@ -72,13 +95,13 @@ CAPACITY_FEATURES = ["doctors60", "teams60"]
 FEATURES = FREQUENCY_FEATURES + WORKLOAD_FEATURES + CAPACITY_FEATURES
 
 pdframe = pd.read_csv("FLasso2017-08-14T15:29:28.093+02:00.csv")
-#event_titles = ["Triage"] # Kölapp, Triage, Klar or Läkare
-event_titles = ["Kölapp", "Triage", "Läkare", "Klar"]
+#EVENT_TITLES = ["Triage"] # Kölapp, Triage, Klar or Läkare
+EVENT_TITLES = ["Kölapp", "Triage", "Läkare", "Klar"]
 
 # doing this outside of input_fn_train bc if placed in there it will be called maaaaaaany times
 epoch_seconds = np.array(pdframe["epochseconds"].get_values(), dtype=np.int32)
 time_of_week_features = {}
-for event_title in event_titles:
+for event_title in EVENT_TITLES:
     time_of_week_feature = to_time_of_week_feature_np(epoch_seconds, event_title)
     time_of_week_feature = time_of_week_feature / np.max(time_of_week_feature)
     time_of_week_features[fix(event_title)] = time_of_week_feature
@@ -119,32 +142,37 @@ def input_fn_train():
         feature_cols[key] = col / tf.reduce_max(col) # normalization
 
     outputs = {}
-    for event_title in event_titles:
+    for event_title in EVENT_TITLES:
         next_hour_values = tf.constant(pdframe["NextHour" + event_title].get_values(), dtype=tf.float32)
         outputs["NextHour" + fix(event_title)] = next_hour_values
 
     #outputs = outputs / tf.reduce_max(outputs)
     return feature_cols, outputs
 
+#regressor = learn.Estimator(model_fn=model, model_dir="./modeldir")
 regressor = learn.Estimator(model_fn=model, model_dir="./modeldir")
-w_to_monitor = ["NextHour" + fix(title) + "-n_non_zero_weights" for title in event_titles]
-mse_to_monitor = ["NextHour" + fix(title) + "-mse" for title in event_titles]
+w_to_monitor = ["NextHour" + fix(title) + "-n_non_zero_weights" for title in EVENT_TITLES]
+mse_to_monitor = ["NextHour" + fix(title) + "-mse" for title in EVENT_TITLES]
 #print_tensor = learn.monitors.PrintTensor(["NextHourTriage-n_non_zero_weights", "NextHourTriage-mse"])
 print_tensor = learn.monitors.PrintTensor(w_to_monitor + mse_to_monitor)
-regressor.fit(input_fn=input_fn_train, steps=50000, monitors=[print_tensor])
+#regressor.fit(input_fn=input_fn_train, steps=50000, monitors=[print_tensor])
+regressor.fit(input_fn=input_fn_train, steps=5, monitors=[print_tensor])
 
-'''
 def serving_input_fn():
-    default_inputs = {col.name: tf.placeholder(col.dtype, [None]) for col in feature_cols}
+    default_inputs = {fname: tf.placeholder(tf.float32) for fname in FEATURES}
     features = {key: tf.expand_dims(tensor, -1) for key, tensor in default_inputs.items()}
     return input_fn_utils.InputFnOps(
         features=features,
         labels=None,
+        #labels=tf.constant([1]),
         default_inputs=default_inputs
     )
 
+'''
 regressor.export_savedmodel(
-   "exportedmodel",
-    serving_input_fn
+   export_dir_base="exportedmodel",
+    serving_input_fn=serving_input_fn,
+    #default_output_alternative_key="NextHourLakare"
+    #default_output_alternative_key=["NextHourLakare"]
 )
 '''
