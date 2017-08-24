@@ -27,7 +27,7 @@ def model(features, targets, mode):
     b = tf.get_variable("b", [1])
     X = [features[key] for key in features]
     X = tf.cast(X, tf.float32)
-    X = tf.reshape(X, [2, 3])
+    X = tf.reshape(X, [2, -1])
     y = tf.reshape(tf.matmul(W, X) + b, [-1])
 
     if mode == "train":
