@@ -117,17 +117,24 @@ def generate_Q_features(workload_features, capacity_features):
             Q_features[capacity + "/" + workload] = cap / min_bound_load
     return Q_features
 
-def feature_engineering(workload_features, frequency_features, capacity_features, time_of_week_features):
+def feature_engineering(features, time_of_week_features):
     feature_cols = {}
 
     for key in time_of_week_features:
         feature_cols[key + "TimeOfWeekFeature"] = tf.constant(time_of_week_features[key])
 
-    for key in workload_features:
-        feature_cols[key] = workload_features[key]
+    workload_features = {}
+    frequency_features = {}
+    capacity_features = {}
+    for key in features:
+        if key in WORKLOAD_FEATURES:
+            workload_features[key] = features[key]
+        elif key in FREQUENCY_FEATURES:
+            frequency_features[key] = features[key]
+        elif key in CAPACITY_FEATURES:
+            capacity_features[key] = features[key]
 
-    for key in frequency_features:
-        feature_cols[key] = frequency_features[key]
+        feature_cols[key] = features[key]
 
     Q_features = generate_Q_features(workload_features, capacity_features)
     for key in Q_features:
@@ -141,21 +148,11 @@ def normalize_tensors(dict):
     return normalized_dict, normalization_constants
 
 def input_fn_train():
-    frequency_features = {}
-    for feature in FREQUENCY_FEATURES:
-        col = tf.constant(pdframe[feature].get_values(), dtype=tf.float32)
-        frequency_features[feature] = col
+    features = {}
+    for key in WORKLOAD_FEATURES + FREQUENCY_FEATURES + CAPACITY_FEATURES:
+        features[key] = tf.constant(pdframe[key].get_values(), dtype=tf.float32)
 
-    workload_features = {}
-    for workload in WORKLOAD_FEATURES:
-        load = tf.constant(pdframe[workload].get_values(), dtype=tf.float32)
-        workload_features[workload] = load
-
-    capacity_features = {}
-    for key in CAPACITY_FEATURES:
-        capacity_features[key] = tf.constant(pdframe[key].get_values(), dtype=tf.float32)
-
-    feature_cols = feature_engineering(workload_features, frequency_features, capacity_features, time_of_week_features)
+    feature_cols = feature_engineering(features, time_of_week_features)
     normalized_feature_cols, normalization_constants = normalize_tensors(feature_cols)
 
     outputs = {}
