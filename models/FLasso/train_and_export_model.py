@@ -106,48 +106,64 @@ for event_title in EVENT_TITLES:
     time_of_week_feature = time_of_week_feature / np.max(time_of_week_feature)
     time_of_week_features[fix(event_title)] = time_of_week_feature
 
-def generate_Q_features(frame, workload_features, capacity_features):
+def generate_Q_features(workload_features, capacity_features):
     Q_features = {}
     for workload in workload_features:
         for capacity in capacity_features:
-            load = tf.constant(frame[workload].get_values(), dtype=tf.float32)
-            cap = tf.constant(frame[capacity].get_values(), dtype=tf.float32)
+            load = workload_features[workload]
+            cap = capacity_features[capacity]
             where_load_small = tf.cast(tf.less(load, 0.99), tf.float32)
             min_bound_load = load + 0.5 * where_load_small * tf.ones_like(load) # replace 0s with 0.5s
             Q_features[capacity + "/" + workload] = cap / min_bound_load
     return Q_features
 
-def input_fn_train():
+def feature_engineering(workload_features, frequency_features, capacity_features, time_of_week_features):
     feature_cols = {}
-
-    # epoch_seconds = tf.constant(pdframe["epochseconds"].get_values(), dtype=tf.int32)
 
     for key in time_of_week_features:
         feature_cols[key + "TimeOfWeekFeature"] = tf.constant(time_of_week_features[key])
 
-    untreated_low_prio_col = tf.constant(pdframe["UntreatedLowPrio"].get_values(), dtype=tf.float32)
-    feature_cols["UntreatedLowPrio"] = untreated_low_prio_col / tf.reduce_max(untreated_low_prio_col) # normalization
+    for key in workload_features:
+        feature_cols[key] = workload_features[key]
 
-    for workload in WORKLOAD_FEATURES:
-        load = tf.constant(pdframe[workload].get_values(), dtype=tf.float32)
-        feature_cols[workload] = load / tf.reduce_max(load)
+    for key in frequency_features:
+        feature_cols[key] = frequency_features[key]
 
+    Q_features = generate_Q_features(workload_features, capacity_features)
+    for key in Q_features:
+        feature_cols[key] = Q_features[key]
+
+    return feature_cols
+
+def normalize_tensors(dict):
+    normalization_constants = {key: tf.reduce_max(dict[key]) for key in dict}
+    normalized_dict = {key: dict[key] / normalization_constants[key] for key in dict}
+    return normalized_dict, normalization_constants
+
+def input_fn_train():
+    frequency_features = {}
     for feature in FREQUENCY_FEATURES:
         col = tf.constant(pdframe[feature].get_values(), dtype=tf.float32)
-        feature_cols[feature] = col / tf.reduce_max(col) # normalization
+        frequency_features[feature] = col
 
-    Q_features = generate_Q_features(pdframe, WORKLOAD_FEATURES, CAPACITY_FEATURES)
-    for key in Q_features:
-        col = Q_features[key]
-        feature_cols[key] = col / tf.reduce_max(col) # normalization
+    workload_features = {}
+    for workload in WORKLOAD_FEATURES:
+        load = tf.constant(pdframe[workload].get_values(), dtype=tf.float32)
+        workload_features[workload] = load
+
+    capacity_features = {}
+    for key in CAPACITY_FEATURES:
+        capacity_features[key] = tf.constant(pdframe[key].get_values(), dtype=tf.float32)
+
+    feature_cols = feature_engineering(workload_features, frequency_features, capacity_features, time_of_week_features)
+    normalized_feature_cols, normalization_constants = normalize_tensors(feature_cols)
 
     outputs = {}
     for event_title in EVENT_TITLES:
         next_hour_values = tf.constant(pdframe["NextHour" + event_title].get_values(), dtype=tf.float32)
         outputs["NextHour" + fix(event_title)] = next_hour_values
 
-    #outputs = outputs / tf.reduce_max(outputs)
-    return feature_cols, outputs
+    return normalized_feature_cols, outputs
 
 #regressor = learn.Estimator(model_fn=model, model_dir="./modeldir")
 regressor = learn.Estimator(model_fn=model, model_dir="./modeldir")
@@ -156,7 +172,7 @@ mse_to_monitor = ["NextHour" + fix(title) + "-mse" for title in EVENT_TITLES]
 #print_tensor = learn.monitors.PrintTensor(["NextHourTriage-n_non_zero_weights", "NextHourTriage-mse"])
 print_tensor = learn.monitors.PrintTensor(w_to_monitor + mse_to_monitor)
 #regressor.fit(input_fn=input_fn_train, steps=50000, monitors=[print_tensor])
-regressor.fit(input_fn=input_fn_train, steps=5, monitors=[print_tensor])
+regressor.fit(input_fn=input_fn_train, steps=450, monitors=[print_tensor])
 
 def serving_input_fn():
     default_inputs = {fname: tf.placeholder(tf.float32) for fname in FEATURES}
