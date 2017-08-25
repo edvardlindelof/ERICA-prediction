@@ -13,35 +13,61 @@ import numpy as np
 from time_of_week_feature import to_time_of_week_feature, to_time_of_week_feature_np
 
 
-def model(features, targets, mode):
+def model(features_in, targets, mode):
+    for key in features_in:
+        features_in[key] = features_in[key] / feature_maxes[key] # normalization
+
+    features = feature_engineering(features_in, time_of_week_features)
+    # TODO if normalization constants defined, use them instead
+    #features, normalization_constants = normalize_tensors(unnormalized_features)
+
+    #feature_keys = sorted(features.keys()) # I want to be sure of the order
+    #normalization_constantsz = tf.stack([tf.reduce_max(features[key]) for key in feature_keys])
+    #print normalization_constantsz
+    #normalization_constants = tf.get_variable("normalization_constants", [len(features), 1])
+    #normalization_constants.assign(tf.reshape(normalization_constantsz, [51, 1]), use_locking=True)
+    #normalization_constants = tf.placeholder(tf.float32, [len(features)], "normalization_constants")
+    #norms = tf.constant(normalization_constantsz, name="normalization_constants")
+
+    '''
+    i = 0
+    for key in feature_keys:
+        print tf.reduce_max(features[key])
+        features[key] = features[key] / tf.reduce_max(features[key])
+        #print norms[i]
+        #features[key] = features[key] / norms[i]
+        i += 1
+    '''
+
+    print "inside model()"
+    #print normalization_constants
+
     #W = tf.placeholder(tf.float32)
     #b = tf.placeholder(tf.float32)
     W = tf.get_variable("W", [len(EVENT_TITLES), len(features)])
     b = tf.get_variable("b", [len(EVENT_TITLES), 1])
-    #X = [features[key] for key in features]
-    X = tf.reshape([features[key] for key in features], [len(features), -1])
+    X = [features[key] for key in features]
+    #X = tf.div(tf.reshape([features[key] for key in feature_keys], [len(features), -1]), normalization_constants)
+    #X = tf.reshape(tf.div([features[key] for key in feature_keys], normalization_constants), [len(features), -1])
+    '''
+    X = [features[key] for key in features]
+    X = tf.cast(X, tf.float64)
+    normalization_constants = tf.cast(normalization_constants, tf.float64)
+    X = tf.div(tf.reshape(X, [len(features), -1]), normalization_constants)
+    X = tf.cast(X, tf.float32)
+    '''
     #t = tf.reshape([targets[key] for key in target_keys], [len(targets), -1])
 
     target_keys = []
     if mode == "train":
         target_keys = targets.keys()
+        print target_keys
         t = tf.reshape([targets[key] for key in target_keys], [len(targets), -1])
     else:
         t = tf.placeholder(tf.float32)
 
-    print W
     print tf.reshape(X, [len(features), -1])
     y = tf.matmul(W, X) + b
-
-    print "inside model()"
-    print targets
-    print mode
-    print mode == "infer"
-    print t
-    print y
-    print W
-    print FEATURES
-    print [feature for feature in features.keys()]
 
     un_penaltied_loss = tf.reduce_mean(tf.square(y - t), 1)
     #un_penaltied_loss = tf.losses.mean_squared_error(t, y)
@@ -68,7 +94,7 @@ def model(features, targets, mode):
     return tf.contrib.learn.ModelFnOps(
         mode=mode,
         #predictions=y,
-        predictions=tf.reduce_sum(y),
+        predictions=tf.reduce_sum(y), # TODO outputting the dict below would be neater if it can be made to work
         #predictions={target_keys[i]: y[i] for i in range(len(target_keys))},
         loss=loss,
         train_op=train,
@@ -105,6 +131,12 @@ for event_title in EVENT_TITLES:
     time_of_week_feature = to_time_of_week_feature_np(epoch_seconds, event_title)
     time_of_week_feature = time_of_week_feature / np.max(time_of_week_feature)
     time_of_week_features[fix(event_title)] = time_of_week_feature
+
+feature_maxes = {}
+for feature in FEATURES:
+    values = np.array(pdframe[feature].get_values(), dtype=np.float32)
+    feature_maxes[feature] = np.max(values)
+
 
 def generate_Q_features(workload_features, capacity_features):
     Q_features = {}
@@ -152,15 +184,24 @@ def input_fn_train():
     for key in WORKLOAD_FEATURES + FREQUENCY_FEATURES + CAPACITY_FEATURES:
         features[key] = tf.constant(pdframe[key].get_values(), dtype=tf.float32)
 
-    feature_cols = feature_engineering(features, time_of_week_features)
-    normalized_feature_cols, normalization_constants = normalize_tensors(feature_cols)
+    #feature_cols = feature_engineering(features, time_of_week_features)
+    #normalized_feature_cols, normalization_constants = normalize_tensors(feature_cols)
 
     outputs = {}
     for event_title in EVENT_TITLES:
         next_hour_values = tf.constant(pdframe["NextHour" + event_title].get_values(), dtype=tf.float32)
         outputs["NextHour" + fix(event_title)] = next_hour_values
 
-    return normalized_feature_cols, outputs
+    #return normalized_feature_cols, outputs
+    return features, outputs
+
+'''
+training_feature_cols, _ = input_fn_train()
+training_feature_keys = sorted(training_feature_cols.keys()) # I want to be sure of the order
+
+maxes = [tf.reduce_max(training_feature_cols[key]) for key in training_feature_keys]
+normalization_constants = tf.constant(tf.reshape(maxes, [len(maxes)]))
+'''
 
 #regressor = learn.Estimator(model_fn=model, model_dir="./modeldir")
 regressor = learn.Estimator(model_fn=model, model_dir="./modeldir")
@@ -181,11 +222,9 @@ def serving_input_fn():
         default_inputs=default_inputs
     )
 
-'''
 regressor.export_savedmodel(
    export_dir_base="exportedmodel",
     serving_input_fn=serving_input_fn,
     #default_output_alternative_key="NextHourLakare"
     #default_output_alternative_key=["NextHourLakare"]
 )
-'''
