@@ -29,7 +29,8 @@ def to_time_of_week_feature_np(epochsecond, event_title):
 
 def to_time_of_week_feature(epochsecond, event_title):
     incidence_bins = _incidence_bins(event_title)
-    incidence_mean_bins = tf.constant([np.mean(incidence_bins[i]) for i in range(N_BINS)], dtype=tf.float32)
+    #incidence_mean_bins = tf.constant([np.mean(incidence_bins[i]) for i in range(N_BINS)], dtype=tf.float32)
+    incidence_mean_bins = tf.cast([np.mean(incidence_bins[i]) for i in range(N_BINS)], tf.float32)
     second_in_week = epochsecond % WEEK_IN_SECONDS
     return tf.map_fn(lambda s: incidence_mean_bins[s / BIN_WIDTH], second_in_week, dtype=tf.float32)
 
