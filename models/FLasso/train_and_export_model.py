@@ -4,6 +4,7 @@ import tensorflow as tf
 from tensorflow.contrib import learn
 from tensorflow.contrib.learn import LinearRegressor
 from tensorflow.contrib import layers
+from tensorflow.contrib.learn import ProblemType
 from tensorflow.contrib.learn.python.learn.utils import input_fn_utils
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -12,6 +13,8 @@ import numpy as np
 
 from time_of_week_feature import to_time_of_week_feature, to_time_of_week_feature_np, _incidence_bins
 
+
+TARGET_KEYS = []
 
 def model(features_in, targets, mode):
 
@@ -88,10 +91,10 @@ def model(features_in, targets, mode):
     '''
     #t = tf.reshape([targets[key] for key in target_keys], [len(targets), -1])
 
-    target_keys = []
     if mode == "train":
-        target_keys = targets.keys()
-        t = tf.reshape([targets[key] for key in target_keys], [len(targets), -1])
+        for key in targets.keys():
+            TARGET_KEYS.append(key)
+        t = tf.reshape([targets[key] for key in TARGET_KEYS], [len(targets), -1])
     else:
         t = tf.placeholder(tf.float32)
 
@@ -108,38 +111,58 @@ def model(features_in, targets, mode):
     optimizer = tf.train.GradientDescentOptimizer(0.01)
     train = tf.group(optimizer.minimize(loss), tf.assign_add(global_step, 1))
 
-    for i in range(len(target_keys)):
-        mse = tf.identity(un_penaltied_loss[i], name=target_keys[i] + "-mse")
-        tf.summary.scalar(target_keys[i] + "-mean_square_error", mse)
+    for i in range(len(TARGET_KEYS)):
+        mse = tf.identity(un_penaltied_loss[i], name=TARGET_KEYS[i] + "-mse")
+        tf.summary.scalar(TARGET_KEYS[i] + "-mean_square_error", mse)
 
-    for i in range(len(target_keys)):
+    for i in range(len(TARGET_KEYS)):
         zero = tf.constant(0, dtype=tf.float32)
         #non_zero_weights = tf.not_equal(W, zero)
         non_zero_weights = tf.greater(tf.abs(W[i]), zero + 0.3)
-        n_non_zero_weights = tf.reduce_sum(tf.cast(non_zero_weights, tf.float32), name=target_keys[i] + "-n_non_zero_weights")
-        title = target_keys[i]
+        n_non_zero_weights = tf.reduce_sum(tf.cast(non_zero_weights, tf.float32), name=TARGET_KEYS[i] + "-n_non_zero_weights")
+        title = TARGET_KEYS[i]
         tf.summary.scalar(fix(title) + "-non-zero_weights", n_non_zero_weights)
 
     print tf.size(X[0])
     n_inputs = tf.size(X[0])
     print tf.reshape(y, [n_inputs, -1])
     transp_y = tf.transpose(y) # bc ml-engine says outer dimension must be unknown
-    #print transp_y[0]
-    #import sys
-    #sys.exit()
+    if mode != "train":
+        print transp_y
+        print tf.shape(transp_y)[0]
+        import sys
+        #sys.exit()
     reshp_y = tf.reshape(y, [n_inputs, -1])
+
+    #def y_slice_to_output_row(y_slice):
+        #return {target_keys[i]: y_slice[i] for i in range(len(target_keys))}
+
+    #output = tf.map_fn(y_slice_to_output_row, transp_y)
+    output = {TARGET_KEYS[i]: y[i] for i in range(len(TARGET_KEYS))}
+    #output = transp_y
+    print len(TARGET_KEYS)
+    print y
+    print output
+    print output["NextHourTriage"]
+    import sys
+    #sys.exit()
+
 
     return tf.contrib.learn.ModelFnOps(
         mode=mode,
         #predictions=y[0],
-        predictions=transp_y,
+        #predictions=transp_y,
         #predictions=reshp_y,
         #predictions=tf.constant([1., 1.]),
         #predictions=tf.reduce_sum(y), # TODO outputting the dict below would be neater if it can be made to work
         #predictions={target_keys[i]: y[i] for i in range(len(target_keys))},
+        #predictions=output,
+        #predictions=[{target_keys[j]: y[i][j] for j in range(len(target_keys))} for i in range(tf.shape(y)[1])],
+        #predictions={"yoo": transp_y},
+        predictions=output,
         loss=loss,
         train_op=train,
-        #output_alternatives=["NextHourLakare"]
+        #output_alternatives={"Triage": (ProblemType.UNSPECIFIED, {"NextHourTriagewom": outputz["NextHourTriage"]})}
     )
 
 def fix(title):
@@ -212,7 +235,7 @@ def generate_Q_features(workload_features, capacity_features):
 def feature_engineering(features, time_of_week_features):
     feature_cols = {}
 
-    for key in time_of_week_features: # TODO time of week feature currently turned off!!
+    for key in time_of_week_features:
         feature_cols[key + "TimeOfWeekFeature"] = time_of_week_features[key]
 
     workload_features = {}
@@ -308,7 +331,7 @@ def serving_input_fn():
 regressor.export_savedmodel(
    export_dir_base="exportedmodel",
     serving_input_fn=serving_input_fn,
-    #default_output_alternative_key="NextHourLakare"
+    #default_output_alternative_key=["NextHourLakarewowow"]
     #default_output_alternative_key=["NextHourLakare"]
 )
 
