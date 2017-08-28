@@ -14,23 +14,36 @@ from time_of_week_feature import to_time_of_week_feature, to_time_of_week_featur
 
 
 def model(features_in, targets, mode):
+
+    print "inside model()"
+    #print features_in["epochseconds"]
+    print features_in["all"]
+    import sys
+    #sys.exit()
+
     for key in features_in:
         if key != "epochseconds":
             features_in[key] = features_in[key] / feature_maxes[key] # normalization
 
+    print features_in.keys()
+
     if mode == "train":
+        #print features_in["epochseconds"]
         time_of_week_features = TIME_OF_WEEK_FEATURES
     else:
         epoch_seconds = tf.cast(features_in["epochseconds"], tf.int32)
+        print features_in["epochseconds"]
+        print epoch_seconds
+        print features_in["all"]
+        import sys
+        #sys.exit()
         time_of_week_features = {}
         for event_title in EVENT_TITLES:
-            #time_of_week_feature = to_time_of_week_feature(epoch_seconds, event_title)
-            #time_of_week_feature = time_of_week_feature / tf.reduce_max(time_of_week_feature)
-            #time_of_week_features[fix(event_title)] = time_of_week_feature
-            time_of_week_features[fix(event_title)] = tf.constant(1000., dtype=tf.float32)
-
-    print "=================== " + "time_of_week_features:"
-    print time_of_week_features
+            time_of_week_feature = to_time_of_week_feature(epoch_seconds, event_title)
+            #time_of_week_feature = to_time_of_week_feature_np(epoch_seconds, event_title)
+            time_of_week_feature = time_of_week_feature / tf.reduce_max(time_of_week_feature)
+            time_of_week_features[fix(event_title)] = time_of_week_feature
+            #time_of_week_features[fix(event_title)] = tf.ones_like(features_in[FEATURES[2]])
 
     features = feature_engineering(features_in, time_of_week_features)
     #print features
@@ -82,8 +95,7 @@ def model(features_in, targets, mode):
     else:
         t = tf.placeholder(tf.float32)
 
-    print "inside model()"
-    print tf.reshape(X, [len(features), -1])
+
     y = tf.matmul(W, X) + b
 
     un_penaltied_loss = tf.reduce_mean(tf.square(y - t), 1)
@@ -200,8 +212,8 @@ def generate_Q_features(workload_features, capacity_features):
 def feature_engineering(features, time_of_week_features):
     feature_cols = {}
 
-    #for key in time_of_week_features: # TODO time of week feature currently turned off!!
-        #feature_cols[key + "TimeOfWeekFeature"] = time_of_week_features[key]
+    for key in time_of_week_features: # TODO time of week feature currently turned off!!
+        feature_cols[key + "TimeOfWeekFeature"] = time_of_week_features[key]
 
     workload_features = {}
     frequency_features = {}
@@ -273,9 +285,9 @@ def input_fn_test():
     }
     for key in datapoint:
         if key == "epochseconds":
-            datapoint[key] = tf.constant(datapoint[key], dtype=tf.int32)
+            datapoint[key] = tf.constant([datapoint[key]], dtype=tf.int32)
         else:
-            datapoint[key] = tf.constant(datapoint[key], dtype=tf.float32)
+            datapoint[key] = tf.constant([datapoint[key]], dtype=tf.float32)
     return datapoint
 
 def serving_input_fn():
